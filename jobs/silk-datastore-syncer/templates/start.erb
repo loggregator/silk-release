@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+/var/vcap/packages/silk-datastore-syncer/bin/silk-datastore-syncer \
+  -n <%= p("sync_interval_in_seconds") %> \
+  -gardenNetwork <%= p("garden.network") %> \
+  -gardenAddr <%= p("garden.address") %>
