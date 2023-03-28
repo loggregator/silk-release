@@ -110,4 +110,19 @@ var _ = Describe("Datastore syncer", func() {
 			Metadata: map[string]interface{}{"log_config": `{"guid":"test","index":0,"source_name":"test","tags":{"test":"value"}}`},
 		}))
 	})
+
+	It("doesn't crash when containers fails", func() {
+		fakeGarden.RouteToHandler("GET", "/containers", ghttp.RespondWithJSONEncoded(http.StatusNotFound, struct{}{}))
+		Consistently(session, 3).ShouldNot(gexec.Exit())
+	})
+	It("doesn't crash when container fails", func() {
+		containers := struct {
+			Handles []string
+		}{
+			Handles: []string{"test"},
+		}
+		fakeGarden.RouteToHandler("GET", "/containers", ghttp.RespondWithJSONEncoded(http.StatusOK, containers))
+		fakeGarden.RouteToHandler("GET", "/containers/test/properties", ghttp.RespondWithJSONEncoded(http.StatusNotFound, struct{}{}))
+		Consistently(session, 3).ShouldNot(gexec.Exit())
+	})
 })
