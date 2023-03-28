@@ -29,10 +29,6 @@ var _ = Describe("Datastore syncer", func() {
 		var err error
 		silkFile, err = os.CreateTemp(GinkgoT().TempDir(), "silkfile")
 		Expect(err).ToNot(HaveOccurred())
-		silkLockFile, err = os.CreateTemp(GinkgoT().TempDir(), "silkfile_lock")
-		Expect(err).ToNot(HaveOccurred())
-		silkLockFile, err = os.CreateTemp(GinkgoT().TempDir(), "silkfile_version")
-		Expect(err).ToNot(HaveOccurred())
 		u, err := user.Current()
 		Expect(err).ToNot(HaveOccurred())
 		groups, err := u.GroupIds()
