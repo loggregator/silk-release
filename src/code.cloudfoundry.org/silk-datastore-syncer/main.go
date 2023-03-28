@@ -18,12 +18,12 @@ import (
 )
 
 var (
-	interval           *int
-	gardenNetwork      *string
-	gardenAddr         *string
-	silkFile           *string
-	datastoreFileOwner *string
-	datastoreFileGroup *string
+	interval      *int
+	gardenNetwork *string
+	gardenAddr    *string
+	silkFile      *string
+	silkFileOwner *string
+	silkFileGroup *string
 )
 
 func init() {
@@ -31,8 +31,8 @@ func init() {
 	gardenNetwork = flag.String("gardenNetwork", "", "garden network type.")
 	gardenAddr = flag.String("gardenAddr", "", "garden address.")
 	silkFile = flag.String("silkFile", "", "silk file.")
-	datastoreFileOwner = flag.String("silkFileOwner", "", "owner of silk file")
-	datastoreFileGroup = flag.String("silkFileGroup", "", "group owner of silk file")
+	silkFileOwner = flag.String("silkFileOwner", "", "owner of silk file")
+	silkFileGroup = flag.String("silkFileGroup", "", "group owner of silk file")
 }
 
 func main() {
@@ -42,6 +42,9 @@ func main() {
 	log.Println("interval:", *interval)
 	log.Println("gardenNetwork:", *gardenNetwork)
 	log.Println("gardenAddr:", *gardenAddr)
+	log.Println("silkFile:", *silkFile)
+	log.Println("silkFileOwner:", *gardenAddr)
+	log.Println("silkFileGroup:", *gardenAddr)
 
 	gardenClient := client.New(connection.New(*gardenNetwork, *gardenAddr))
 	WaitForGarden(gardenClient)
@@ -125,8 +128,8 @@ func makeDatastore() *datastore.Store {
 		DataFilePath:    *silkFile,
 		VersionFilePath: *silkFile + "_version",
 		LockedFilePath:  *silkFile + "_lock",
-		FileOwner:       *datastoreFileOwner,
-		FileGroup:       *datastoreFileGroup,
+		FileOwner:       *silkFileOwner,
+		FileGroup:       *silkFileGroup,
 		CacheMutex:      new(sync.RWMutex),
 	}
 	return store
