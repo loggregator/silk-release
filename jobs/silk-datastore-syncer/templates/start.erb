@@ -6,4 +6,5 @@
   -gardenAddr <%= p("garden.address") %> \
   -silkFile /var/vcap/data/container-metadata/store.json \
   -silkFileOwner vcap \
-  -silkFileGroup vcap
+  -silkFileGroup vcap \
+  -logLevel <%= p("log_level") %>

@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"log"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -13,6 +13,9 @@ import (
 	"code.cloudfoundry.org/garden"
 	"code.cloudfoundry.org/garden/client"
 	"code.cloudfoundry.org/garden/client/connection"
+	"code.cloudfoundry.org/lager"
+	"code.cloudfoundry.org/lager/lagerflags"
+	"code.cloudfoundry.org/lib/common"
 	"code.cloudfoundry.org/lib/datastore"
 	"code.cloudfoundry.org/lib/serial"
 )
@@ -24,6 +27,7 @@ var (
 	silkFile      *string
 	silkFileOwner *string
 	silkFileGroup *string
+	logLevel      *string
 )
 
 func init() {
@@ -33,75 +37,84 @@ func init() {
 	silkFile = flag.String("silkFile", "", "silk file.")
 	silkFileOwner = flag.String("silkFileOwner", "", "owner of silk file")
 	silkFileGroup = flag.String("silkFileGroup", "", "group owner of silk file")
+	logLevel = flag.String("logLevel", lager.INFO.String(), "log level")
 }
 
 func main() {
 	flag.Parse()
+	loggerConfig := common.GetLagerConfig()
+	loggerConfig.LogLevel = *logLevel
+	logger, _ := lagerflags.NewFromConfig(fmt.Sprintf("%s.%s", "cfnetworking", "silk-datastore-syncer"), loggerConfig)
 
-	log.Println("===== Properties =====")
-	log.Println("interval:", *interval)
-	log.Println("gardenNetwork:", *gardenNetwork)
-	log.Println("gardenAddr:", *gardenAddr)
-	log.Println("silkFile:", *silkFile)
-	log.Println("silkFileOwner:", *gardenAddr)
-	log.Println("silkFileGroup:", *gardenAddr)
+	logger.Info("properties", lager.Data{
+		"interval":      interval,
+		"gardenNetwork": gardenNetwork,
+		"gardenAddr":    gardenAddr,
+		"silkFile":      silkFile,
+		"silkFileOwner": *silkFileOwner,
+		"silkFileGroup": *silkFileGroup,
+	})
 
 	gardenClient := client.New(connection.New(*gardenNetwork, *gardenAddr))
-	WaitForGarden(gardenClient)
+	WaitForGarden(gardenClient, logger)
 	store := makeDatastore()
 
 	duration := time.Duration(*interval) * time.Second
 	for {
 		time.Sleep(duration)
-		log.Println("Starting sync loop")
+		logger.Debug("Starting sync loop")
 
 		gardenContainers, err := gardenClient.Containers(nil)
 		if err != nil {
-			log.Println("Garden: error retrieving containers:", err)
+			logger.Error("Garden: error retrieving containers:", err)
 			continue
 		}
 
 		storeContainers, err := store.ReadAll()
 		if err != nil {
-			log.Println("Datastore: error retrieving containers from datastore:", err)
+			logger.Error("Datastore: error retrieving containers from datastore:", err)
 			continue
 		}
 
 		for _, c := range gardenContainers {
 			desiredLogConfig, err := getGardenLogConfig(c)
 			if err != nil {
+				logger.Error("error getting garden log config", err)
 				continue
 			}
+			logger.Debug("Garden container", lager.Data{"log info": desiredLogConfig})
 
 			sc := storeContainers[c.Handle()]
 			actualLogConfig, err := getSilkLogConfig(sc)
 			if err != nil {
+				logger.Error("error getting silk log config", err)
 				continue
 			}
+			logger.Debug("Datastore container", lager.Data{"log info": actualLogConfig})
 
 			if reflect.DeepEqual(desiredLogConfig, actualLogConfig) {
-				log.Println("They are equal.. moving on")
+				logger.Debug("They are equal no action taken")
 				continue
 			}
 
-			log.Printf("Datastore container: %s: reconciling with Garden container", sc.Handle)
+			logger.Debug("Datastore container reconciling with Garden container", lager.Data{"handle": sc.Handle})
 			b, err := json.Marshal(desiredLogConfig)
 			if err != nil {
-				log.Printf("Garden container: %s: error marshalling container log config: %s", sc.Handle, err.Error())
+				logger.Error("Garden container error marshalling container log config", err, lager.Data{"handle": sc.Handle})
 				continue
 			}
 			sc.Metadata["log_config"] = string(b)
 			err = store.Add(sc.Handle, sc.IP, sc.Metadata)
 			if err != nil {
-				log.Printf("Error updating log config %s", err.Error())
+				logger.Error("Error updating log config", err)
 			}
 		}
 	}
 }
 
-func WaitForGarden(gardenClient garden.Client) {
+func WaitForGarden(gardenClient garden.Client, logger lager.Logger) {
 	for {
-		log.Println("Attempting to ping Garden")
+		logger.Debug("Attempting to ping Garden")
 		err := gardenClient.Ping()
 		if err == nil {
 			break
@@ -110,9 +123,9 @@ func WaitForGarden(gardenClient garden.Client) {
 		case nil:
 			break
 		case garden.UnrecoverableError:
-			log.Fatalln("Garden: unrecoverable:", err)
+			logger.Fatal("Garden: unrecoverable", err)
 		default:
-			log.Println("Garden: cannot connect:", err)
+			logger.Error("Garden: cannot connect", err)
 			time.Sleep(1 * time.Second)
 		}
 	}
@@ -138,7 +151,7 @@ func makeDatastore() *datastore.Store {
 func getGardenLogConfig(c garden.Container) (executor.LogConfig, error) {
 	props, err := c.Properties()
 	if err != nil {
-		log.Printf("Garden container: %s: error retrieving properties: %s", c.Handle(), err.Error())
+		err = fmt.Errorf("Garden container: %s: error retrieving properties: %w", c.Handle(), err)
 		return executor.LogConfig{}, err
 	}
 	logConfigStr, ok := props["log_config"]
@@ -146,11 +159,10 @@ func getGardenLogConfig(c garden.Container) (executor.LogConfig, error) {
 	if ok {
 		err := json.Unmarshal([]byte(logConfigStr), &desiredLogConfig)
 		if err != nil {
-			log.Printf("Garden container: %s: error unmarshalling container log config from datastore: %s", c.Handle(), err.Error())
+			err = fmt.Errorf("Garden container: %s unmarshalling container log config from datastore: %w", c.Handle(), err)
 			return executor.LogConfig{}, err
 		}
 	}
-	log.Printf("Garden container: log config: %#v", desiredLogConfig)
 	return desiredLogConfig, nil
 }
 
@@ -160,10 +172,9 @@ func getSilkLogConfig(sc datastore.Container) (executor.LogConfig, error) {
 	if ok {
 		err := json.Unmarshal([]byte(logConfigStr), &actualLogConfig)
 		if err != nil {
-			log.Printf("Datastore container: %s: error unmarshalling container log config from datastore: %s", sc.Handle, err.Error())
+			err = fmt.Errorf("Datastore container: %s: error unmarshalling container log config from datastore: %w", sc.Handle, err)
 			return executor.LogConfig{}, err
 		}
 	}
-	log.Printf("Datastore container: log config: %#v", actualLogConfig)
 	return actualLogConfig, nil
 }

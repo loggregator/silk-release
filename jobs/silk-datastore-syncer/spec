@@ -21,3 +21,6 @@ properties:
   garden.network:
     description: "Network type for the garden server connection (tcp or unix)."
     default: unix
+  log_level:
+    description: "Logging level (debug, info, warn, error)."
+    default: info
